@@ -21,11 +21,6 @@ export default function PaymentForm({ onSuccess }: PaymentFormProps) {
     e.preventDefault()
     setResult(null)
 
-    // BUG: idempotency key is generated once and captured in the closure, but
-    // setLoading(true) doesn't take effect until after the await, so rapid
-    // clicks each enter this function before `loading` flips to true.
-    // Each click generates its own unique idempotency key, so the server
-    // treats every request as a distinct payment — causing duplicate charges.
     const key = uuidv4()
 
     try {
