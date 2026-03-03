@@ -29,7 +29,14 @@ export async function processPayment(
     // Check for existing payment with same idempotency key
     const existingPayment = db.payments.findByIdempotencyKey(request.idempotencyKey)
     if (existingPayment) {
-      console.log(`Found existing payment ${existingPayment.id} for idempotency key ${request.idempotencyKey}`)
+      const existingTransaction = db.transactions.findByPaymentId(existingPayment.id)[0]
+      const existingFraudCheck = db.fraudChecks.findByPaymentId(existingPayment.id)
+      return {
+        success: existingPayment.status === 'completed',
+        payment: existingPayment,
+        transaction: existingTransaction,
+        fraudCheck: existingFraudCheck,
+      }
     }
 
     // Create the payment record

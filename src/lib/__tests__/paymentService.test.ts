@@ -45,6 +45,42 @@ describe('Payment Processing Service', () => {
     expect(result.error).toContain('Invalid merchant')
   })
 
+  it('should return the original payment on duplicate idempotency key', async () => {
+    const request = makeRequest({ amount: 42 })
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).toBe(first.payment!.id)
+    expect(second.transaction!.id).toBe(first.transaction!.id)
+  })
+
+  it('should not create duplicate transactions on retry', async () => {
+    const request = makeRequest({ amount: 75 })
+    const first = await processPayment(request)
+    await processPayment(request)
+    await processPayment(request)
+
+    const allTransactions = db.transactions.findAll()
+    const matching = allTransactions.filter(
+      t => t.paymentId === first.payment!.id
+    )
+    expect(matching.length).toBe(1)
+  })
+
+  it('should not create duplicate payment records on retry', async () => {
+    const request = makeRequest({ amount: 60 })
+    await processPayment(request)
+    await processPayment(request)
+
+    const allPayments = db.payments.findAll()
+    const matching = allPayments.filter(
+      p => p.idempotencyKey === request.idempotencyKey
+    )
+    expect(matching.length).toBe(1)
+  })
+
 })
 
 describe('Fraud Detection', () => {
