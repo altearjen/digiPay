@@ -45,37 +45,41 @@ describe('Payment Processing Service', () => {
     expect(result.error).toContain('Invalid merchant')
   })
 
-  // --- This test exposes the DUPLICATE CHARGE BUG ---
-  it('should return the existing payment when the same idempotency key is reused', async () => {
-    const idempotencyKey = 'idem-test-key-123'
-    const request = makeRequest({ idempotencyKey })
+  // Reproduces: "Users are occasionally being double-charged after retrying
+  // failed payments in the mobile app." The mobile app sends the same
+  // idempotency key when a user taps "Pay" again after a timeout, so the
+  // backend should recognize the duplicate and return the original payment.
+  it('should not double-charge when mobile app retries with the same idempotency key', async () => {
+    const idempotencyKey = 'mobile-retry-key-abc'
+    const request = makeRequest({ idempotencyKey, amount: 79.99 })
 
-    // First request — should succeed
+    // First tap — payment goes through
     const first = await processPayment(request)
     expect(first.success).toBe(true)
     const firstPaymentId = first.payment!.id
 
-    // Second request with same idempotency key — should return the same payment, not create a new one
-    const second = await processPayment(request)
-    expect(second.success).toBe(true)
-    expect(second.payment!.id).toBe(firstPaymentId)
+    // Mobile app times out, user taps "Pay" again — same idempotency key
+    const retry = await processPayment(request)
+    expect(retry.success).toBe(true)
+    // Should return the SAME payment, not create a second charge
+    expect(retry.payment!.id).toBe(firstPaymentId)
 
-    // There should only be ONE transaction for this payment
+    // Customer should only see ONE charge on their statement
     const allTransactions = db.transactions.findAll()
-    const chargeTransactions = allTransactions.filter(t => t.type === 'charge')
-    expect(chargeTransactions).toHaveLength(1)
+    const charges = allTransactions.filter(t => t.type === 'charge')
+    expect(charges).toHaveLength(1)
   })
 
-  it('should not create duplicate transactions on retry', async () => {
-    const idempotencyKey = 'retry-key-456'
-    const request = makeRequest({ idempotencyKey, amount: 100 })
+  it('should not create duplicate charges when mobile app retries 3 times', async () => {
+    const idempotencyKey = 'mobile-retry-key-flaky-network'
+    const request = makeRequest({ idempotencyKey, amount: 149.00 })
 
-    // Simulate 3 retries (e.g. from a client with network timeout)
+    // Simulate flaky mobile network: app retries the same payment 3 times
     await processPayment(request)
     await processPayment(request)
     await processPayment(request)
 
-    // Should have exactly 1 payment and 1 transaction, not 3
+    // Customer should see exactly 1 payment and 1 charge, not 3
     const payments = db.payments.findAll()
     const transactions = db.transactions.findAll()
 
