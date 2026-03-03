@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { Payment, Transaction, FraudCheck } from '@/types'
-import PaymentForm from '@/components/PaymentForm'
 import TransactionList from '@/components/TransactionList'
 import FraudAlerts from '@/components/FraudAlerts'
 import StatsBar from '@/components/StatsBar'
@@ -47,14 +47,34 @@ export default function Dashboard() {
                 Dashboard
               </span>
             </div>
-            <div className="text-sm text-gray-500">
-              Payment Processing Platform
-            </div>
+            <Link
+              href="/pay"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors"
+            >
+              + New Payment
+            </Link>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Duplicate charge warning */}
+        {(() => {
+          const txCountByPayment = new Map<string, number>()
+          for (const tx of transactions) {
+            txCountByPayment.set(tx.paymentId, (txCountByPayment.get(tx.paymentId) || 0) + 1)
+          }
+          const dupeCount = Array.from(txCountByPayment.values()).filter(c => c > 1).length
+          if (dupeCount > 0) {
+            return (
+              <div className="mb-6 p-4 bg-red-50 border border-red-300 rounded-xl text-red-800 text-sm font-medium">
+                Duplicate charges detected &mdash; {dupeCount} payment{dupeCount > 1 ? 's have' : ' has'} multiple charges
+              </div>
+            )
+          }
+          return null
+        })()}
+
         {/* Stats */}
         <StatsBar
           payments={payments}
@@ -62,44 +82,36 @@ export default function Dashboard() {
           fraudChecks={fraudChecks}
         />
 
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Payment Form */}
-          <div className="lg:col-span-1">
-            <PaymentForm onSuccess={fetchData} />
+        <div className="mt-8">
+          {/* Tabs */}
+          <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+            <button
+              onClick={() => setActiveTab('payments')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                activeTab === 'payments'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Transactions ({transactions.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('fraud')}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                activeTab === 'fraud'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Fraud Alerts ({fraudChecks.filter(fc => fc.riskLevel !== 'low').length})
+            </button>
           </div>
 
-          {/* Main Content */}
-          <div className="lg:col-span-2">
-            {/* Tabs */}
-            <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
-              <button
-                onClick={() => setActiveTab('payments')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'payments'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Transactions ({transactions.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('fraud')}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'fraud'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Fraud Alerts ({fraudChecks.filter(fc => fc.riskLevel !== 'low').length})
-              </button>
-            </div>
-
-            {activeTab === 'payments' ? (
-              <TransactionList payments={payments} transactions={transactions} />
-            ) : (
-              <FraudAlerts fraudChecks={fraudChecks} payments={payments} />
-            )}
-          </div>
+          {activeTab === 'payments' ? (
+            <TransactionList payments={payments} transactions={transactions} />
+          ) : (
+            <FraudAlerts fraudChecks={fraudChecks} payments={payments} />
+          )}
         </div>
       </main>
     </div>
