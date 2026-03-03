@@ -13,8 +13,31 @@ import { MERCHANTS, CURRENCY_USD } from './constants'
  * Core payment processing service.
  * Handles payment creation, fraud evaluation, and transaction settlement.
  */
+/**
+ * Returns the cached result for a previously-processed idempotency key.
+ * Called by the API route to short-circuit duplicate requests.
+ */
+export function getCachedPaymentResult(
+  idempotencyKey: string
+): ProcessPaymentResponse | null {
+  const existing = db.payments.findByIdempotencyKey(idempotencyKey)
+  if (!existing) return null
+
+  const transaction = db.transactions.findByPaymentId(existing.id)[0]
+  const fraudCheck = db.fraudChecks.findByPaymentId(existing.id)
+
+  return {
+    success: existing.status === 'completed',
+    payment: existing,
+    transaction,
+    fraudCheck,
+    ...(existing.status === 'flagged' && { error: 'Payment flagged for fraud review' }),
+  }
+}
+
 export async function processPayment(
-  request: ProcessPaymentRequest
+  request: ProcessPaymentRequest,
+  { skipIdempotencyCheck = false }: { skipIdempotencyCheck?: boolean } = {}
 ): Promise<ProcessPaymentResponse> {
   try {
     // Validate basic fields
@@ -26,10 +49,13 @@ export async function processPayment(
       return { success: false, error: 'Invalid merchant' }
     }
 
-    // Check for existing payment with same idempotency key
-    const existingPayment = db.payments.findByIdempotencyKey(request.idempotencyKey)
-    if (existingPayment) {
-      console.log(`Found existing payment ${existingPayment.id} for idempotency key ${request.idempotencyKey}`)
+    // Idempotency is handled by the API layer via getCachedPaymentResult.
+    // If the caller signals that it already checked, we skip the lookup here.
+    if (!skipIdempotencyCheck) {
+      const existingPayment = db.payments.findByIdempotencyKey(request.idempotencyKey)
+      if (existingPayment) {
+        console.log(`Found existing payment ${existingPayment.id} for idempotency key ${request.idempotencyKey}`)
+      }
     }
 
     // Create the payment record

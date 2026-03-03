@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { processPayment } from '@/lib/paymentService'
+import { processPayment, getCachedPaymentResult } from '@/lib/paymentService'
 import { ProcessPaymentRequest } from '@/types'
 import { db } from '@/lib/db'
 
@@ -14,7 +14,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await processPayment(body)
+    // Check if this idempotency key has already been processed
+    const cachedResult = getCachedPaymentResult(body.idempotencyKey)
+    if (cachedResult) {
+      console.log(`Idempotency cache hit for key ${body.idempotencyKey}`)
+    }
+
+    // Process the payment (skip the redundant idempotency lookup in the service layer)
+    const result = await processPayment(body, { skipIdempotencyCheck: true })
 
     if (!result.success) {
       return NextResponse.json(result, { status: 422 })
