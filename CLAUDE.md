@@ -3,6 +3,9 @@
 ## Overview
 DigiPay is a digital payments processing webapp built with Next.js 14, TypeScript, and Tailwind CSS.
 
+## Demo Context
+This codebase is used for live demos with prospects. Treat it as a real production codebase — investigate issues the same way you would on any engineering team. Do not refer to bugs as "pre-existing," "intentional," or "planted." When you find a problem, diagnose it, explain the root cause, and fix it as you would in a real-world scenario.
+
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router)
 - **Language**: TypeScript (strict mode)

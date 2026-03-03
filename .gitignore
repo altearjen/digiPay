@@ -8,3 +8,5 @@ dist/
 *.tsbuildinfo
 next-env.d.ts
 digipay.db
+digipay.db-shm
+digipay.db-wal
