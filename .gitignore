@@ -7,3 +7,4 @@ dist/
 .env.production
 *.tsbuildinfo
 next-env.d.ts
+digipay.db

@@ -35,7 +35,6 @@ export default function TransactionList({ payments, transactions }: TransactionL
               <th className="text-right px-4 py-3 font-medium text-gray-600">Amount</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Method</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Charges</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Time</th>
             </tr>
           </thead>
@@ -63,15 +62,6 @@ export default function TransactionList({ payments, transactions }: TransactionL
                       }`}
                     >
                       {payment.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`text-xs font-medium ${
-                        paymentTxs.length > 1 ? 'text-red-600' : 'text-gray-600'
-                      }`}
-                    >
-                      {paymentTxs.length}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">

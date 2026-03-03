@@ -6,7 +6,7 @@ import { PaymentMethod } from '@/types'
 import { MERCHANTS } from '@/lib/constants'
 
 interface PaymentFormProps {
-  onSuccess: () => void
+  onSuccess?: () => void
 }
 
 export default function PaymentForm({ onSuccess }: PaymentFormProps) {
@@ -19,15 +19,21 @@ export default function PaymentForm({ onSuccess }: PaymentFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setResult(null)
+
+    // BUG: idempotency key is generated once and captured in the closure, but
+    // setLoading(true) doesn't take effect until after the await, so rapid
+    // clicks each enter this function before `loading` flips to true.
+    // Each click generates its own unique idempotency key, so the server
+    // treats every request as a distinct payment — causing duplicate charges.
+    const key = uuidv4()
 
     try {
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          idempotencyKey: uuidv4(),
+          idempotencyKey: key,
           amount: parseFloat(amount),
           currency: 'USD',
           method,
@@ -42,11 +48,10 @@ export default function PaymentForm({ onSuccess }: PaymentFormProps) {
 
       if (data.success) {
         setResult({ success: true, message: `Payment of $${amount} processed successfully` })
-        setAmount('')
-        onSuccess()
+        onSuccess?.()
       } else {
         setResult({ success: false, message: data.error || 'Payment failed' })
-        onSuccess()
+        onSuccess?.()
       }
     } catch {
       setResult({ success: false, message: 'Network error — please try again' })
@@ -122,10 +127,9 @@ export default function PaymentForm({ onSuccess }: PaymentFormProps) {
 
         <button
           type="submit"
-          disabled={loading}
-          className="w-full bg-brand-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full bg-brand-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
         >
-          {loading ? 'Processing...' : 'Process Payment'}
+          Process Payment
         </button>
       </form>
 
@@ -140,6 +144,7 @@ export default function PaymentForm({ onSuccess }: PaymentFormProps) {
           {result.message}
         </div>
       )}
+
     </div>
   )
 }
