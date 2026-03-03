@@ -47,6 +47,72 @@ describe('Payment Processing Service', () => {
 
 })
 
+describe('Idempotency / Duplicate Charge Prevention', () => {
+  beforeEach(() => {
+    db._reset()
+  })
+
+  it('should return the original payment on duplicate idempotency key', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-1', amount: 42 })
+
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).toBe(first.payment!.id)
+  })
+
+  it('should not create a second transaction on retry', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-2', amount: 75 })
+
+    await processPayment(request)
+    await processPayment(request)
+
+    const allTransactions = db.transactions.findAll()
+    const matching = allTransactions.filter(t => t.amount === 75)
+    expect(matching).toHaveLength(1)
+  })
+
+  it('should not create a second payment record on retry', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-3', amount: 60 })
+
+    await processPayment(request)
+    await processPayment(request)
+
+    const allPayments = db.payments.findAll()
+    const matching = allPayments.filter(p => p.idempotencyKey === 'dup-key-3')
+    expect(matching).toHaveLength(1)
+  })
+
+  it('should return fraud check from original payment on retry', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-4', amount: 30 })
+
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(second.fraudCheck).toBeDefined()
+    expect(second.fraudCheck!.paymentId).toBe(first.payment!.id)
+  })
+
+  it('should handle concurrent duplicate requests without double-charging', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-concurrent', amount: 100 })
+
+    const [r1, r2] = await Promise.all([
+      processPayment(request),
+      processPayment(request),
+    ])
+
+    // At least one should succeed; neither should error with a vague message
+    const successes = [r1, r2].filter(r => r.success)
+    expect(successes.length).toBeGreaterThanOrEqual(1)
+
+    // Only one transaction should exist for this amount
+    const transactions = db.transactions.findAll().filter(t => t.amount === 100)
+    expect(transactions).toHaveLength(1)
+  })
+})
+
 describe('Fraud Detection', () => {
   beforeEach(() => {
     db._reset()
