@@ -1,3 +1,10 @@
+---
+name: pr-review
+description: Create a pull request with standardized Summary and Test Plan format
+disable-model-invocation: true
+allowed-tools: Bash(git *), Bash(gh *)
+---
+
 Create a pull request for the current branch. Follow these steps:
 
 1. Run `git diff main...HEAD` to see all changes on this branch.
