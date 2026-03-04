@@ -18,6 +18,8 @@ export async function POST(request: NextRequest) {
     const cachedResult = getCachedPaymentResult(body.idempotencyKey)
     if (cachedResult) {
       console.log(`Idempotency cache hit for key ${body.idempotencyKey}`)
+      const status = cachedResult.success ? 200 : 422
+      return NextResponse.json(cachedResult, { status })
     }
 
     // Process the payment (skip the redundant idempotency lookup in the service layer)

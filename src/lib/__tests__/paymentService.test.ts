@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { processPayment } from '../paymentService'
+import { processPayment, getCachedPaymentResult } from '../paymentService'
 import { db } from '../db'
 import { ProcessPaymentRequest } from '@/types'
 
@@ -45,6 +45,84 @@ describe('Payment Processing Service', () => {
     expect(result.error).toContain('Invalid merchant')
   })
 
+})
+
+describe('Idempotency — duplicate charge prevention', () => {
+  beforeEach(() => {
+    db._reset()
+  })
+
+  it('should return the original result when the same idempotency key is used twice', async () => {
+    const request = makeRequest({ idempotencyKey: 'idem-dup-1' })
+
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).toBe(first.payment!.id)
+    expect(second.transaction!.id).toBe(first.transaction!.id)
+  })
+
+  it('should only create one payment record for duplicate requests', async () => {
+    const request = makeRequest({ idempotencyKey: 'idem-dup-2' })
+
+    await processPayment(request)
+    await processPayment(request)
+    await processPayment(request)
+
+    const allPayments = db.payments.findAll()
+    const matching = allPayments.filter(p => p.idempotencyKey === 'idem-dup-2')
+    expect(matching).toHaveLength(1)
+  })
+
+  it('should only create one transaction for duplicate requests', async () => {
+    const request = makeRequest({ idempotencyKey: 'idem-dup-3' })
+
+    await processPayment(request)
+    await processPayment(request)
+
+    const allTransactions = db.transactions.findAll()
+    expect(allTransactions).toHaveLength(1)
+  })
+
+  it('should not create additional transactions on concurrent-style duplicate calls', async () => {
+    const request = makeRequest({ idempotencyKey: 'idem-concurrent' })
+
+    // Simulate rapid duplicate submissions
+    const results = await Promise.all([
+      processPayment(request),
+      processPayment(request),
+      processPayment(request),
+    ])
+
+    const successResults = results.filter(r => r.success)
+    expect(successResults.length).toBeGreaterThanOrEqual(1)
+
+    // Regardless of how many succeed, only one transaction should exist
+    const allTransactions = db.transactions.findAll()
+    expect(allTransactions).toHaveLength(1)
+  })
+
+  it('should allow different idempotency keys to process independently', async () => {
+    const first = await processPayment(makeRequest({ idempotencyKey: 'key-a', amount: 10 }))
+    const second = await processPayment(makeRequest({ idempotencyKey: 'key-b', amount: 20 }))
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).not.toBe(first.payment!.id)
+    expect(db.transactions.findAll()).toHaveLength(2)
+  })
+
+  it('should also deduplicate via getCachedPaymentResult', async () => {
+    const request = makeRequest({ idempotencyKey: 'idem-cache-check' })
+    await processPayment(request)
+
+    const cached = getCachedPaymentResult('idem-cache-check')
+    expect(cached).not.toBeNull()
+    expect(cached!.success).toBe(true)
+    expect(cached!.payment!.idempotencyKey).toBe('idem-cache-check')
+  })
 })
 
 describe('Fraud Detection', () => {
