@@ -1,0 +1,55 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          DIFF=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          echo "diff<<DIFF_EOF" >> "$GITHUB_OUTPUT"
+          echo "$DIFF" >> "$GITHUB_OUTPUT"
+          echo "DIFF_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            You are reviewing a pull request. Perform a security and code review of the following diff.
+
+            PR Title: ${{ github.event.pull_request.title }}
+            PR Body: ${{ github.event.pull_request.body }}
+
+            Diff:
+            ${{ steps.diff.outputs.diff }}
+
+            Review the changes for:
+
+            **Security**
+            - Injection vulnerabilities (SQL, command, XSS)
+            - Authentication/authorization issues
+            - Sensitive data exposure (secrets, PII)
+            - Insecure dependencies or configurations
+
+            **Code Quality**
+            - Correctness and edge cases
+            - Error handling gaps
+            - Performance concerns
+            - Adherence to existing patterns in the codebase
+
+            Provide a concise review comment. If everything looks good, say so briefly. If there are issues, list them with severity (critical/warning/info) and suggest fixes. Do not be verbose — focus on actionable findings.
