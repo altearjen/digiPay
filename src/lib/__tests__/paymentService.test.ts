@@ -47,6 +47,56 @@ describe('Payment Processing Service', () => {
 
 })
 
+describe('Idempotency — duplicate charge prevention', () => {
+  beforeEach(() => {
+    db._reset()
+  })
+
+  it('should return the original result when the same idempotency key is sent twice', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-1', amount: 42 })
+
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).toBe(first.payment!.id)
+    expect(second.transaction!.id).toBe(first.transaction!.id)
+  })
+
+  it('should only create one payment record for duplicate requests', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-2', amount: 75 })
+
+    await processPayment(request)
+    await processPayment(request)
+    await processPayment(request)
+
+    const allPayments = db.payments
+      .findAll()
+      .filter(p => p.idempotencyKey === 'dup-key-2')
+    expect(allPayments).toHaveLength(1)
+  })
+
+  it('should only create one transaction for duplicate requests', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-3', amount: 60 })
+
+    await processPayment(request)
+    await processPayment(request)
+
+    const allTransactions = db.transactions.findAll()
+    expect(allTransactions).toHaveLength(1)
+  })
+
+  it('should allow different idempotency keys to process independently', async () => {
+    const first = await processPayment(makeRequest({ idempotencyKey: 'key-a', amount: 10 }))
+    const second = await processPayment(makeRequest({ idempotencyKey: 'key-b', amount: 20 }))
+
+    expect(first.payment!.id).not.toBe(second.payment!.id)
+    expect(db.payments.findAll()).toHaveLength(2)
+    expect(db.transactions.findAll()).toHaveLength(2)
+  })
+})
+
 describe('Fraud Detection', () => {
   beforeEach(() => {
     db._reset()

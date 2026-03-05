@@ -54,7 +54,15 @@ export async function processPayment(
     if (!skipIdempotencyCheck) {
       const existingPayment = db.payments.findByIdempotencyKey(request.idempotencyKey)
       if (existingPayment) {
-        console.log(`Found existing payment ${existingPayment.id} for idempotency key ${request.idempotencyKey}`)
+        const transaction = db.transactions.findByPaymentId(existingPayment.id)[0]
+        const fraudCheck = db.fraudChecks.findByPaymentId(existingPayment.id)
+        return {
+          success: existingPayment.status === 'completed',
+          payment: existingPayment,
+          transaction,
+          fraudCheck,
+          ...(existingPayment.status === 'flagged' && { error: 'Payment flagged for fraud review' }),
+        }
       }
     }
 
