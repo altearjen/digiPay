@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { processPayment } from '../paymentService'
+import { processPayment, getCachedPaymentResult } from '../paymentService'
 import { db } from '../db'
 import { ProcessPaymentRequest } from '@/types'
 
@@ -90,5 +90,71 @@ describe('Fraud Detection', () => {
     const flagged = results.filter(r => r.payment?.status === 'flagged')
     // Normal low-value payments from different customers should not get flagged
     expect(flagged.length).toBe(0)
+  })
+})
+
+describe('Idempotency — duplicate charge prevention', () => {
+  beforeEach(() => {
+    db._reset()
+  })
+
+  it('should return the same payment when the same idempotency key is used twice', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-1', amount: 75 })
+
+    const first = await processPayment(request)
+    const second = await processPayment(request)
+
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    expect(second.payment!.id).toBe(first.payment!.id)
+  })
+
+  it('should not create multiple transactions for the same idempotency key', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-2', amount: 100 })
+
+    const first = await processPayment(request)
+    await processPayment(request)
+    await processPayment(request)
+
+    const transactions = db.transactions.findAll()
+    const matchingTxns = transactions.filter(
+      t => t.paymentId === first.payment!.id
+    )
+    expect(matchingTxns.length).toBe(1)
+  })
+
+  it('should only create one payment record per idempotency key', async () => {
+    const request = makeRequest({ idempotencyKey: 'dup-key-3', amount: 50 })
+
+    await processPayment(request)
+    await processPayment(request)
+
+    const allPayments = db.payments.findAll()
+    const matching = allPayments.filter(p => p.idempotencyKey === 'dup-key-3')
+    expect(matching.length).toBe(1)
+  })
+
+  it('should return cached result from getCachedPaymentResult after processing', async () => {
+    const request = makeRequest({ idempotencyKey: 'cache-key-1', amount: 30 })
+
+    const result = await processPayment(request)
+    const cached = getCachedPaymentResult('cache-key-1')
+
+    expect(cached).not.toBeNull()
+    expect(cached!.payment!.id).toBe(result.payment!.id)
+    expect(cached!.success).toBe(true)
+  })
+
+  it('should return null from getCachedPaymentResult for unknown keys', () => {
+    const cached = getCachedPaymentResult('nonexistent-key')
+    expect(cached).toBeNull()
+  })
+
+  it('should allow different idempotency keys to create separate payments', async () => {
+    const first = await processPayment(makeRequest({ idempotencyKey: 'key-a', amount: 10 }))
+    const second = await processPayment(makeRequest({ idempotencyKey: 'key-b', amount: 20 }))
+
+    expect(first.payment!.id).not.toBe(second.payment!.id)
+    expect(db.payments.findAll().length).toBe(2)
   })
 })
